@@ -1,0 +1,83 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// A reverse-engineering analysis job submitted via the UI.
+// targetType: 'website' | 'apk' | 'binary'
+// status:     'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+model Job {
+  id         String    @id @default(cuid())
+  targetType String
+  target     String
+  label      String?
+  status     String    @default("queued")
+  progress   Int       @default(0)
+  log        String    @default("")
+  engine     String?   // e.g. 'ghidra' | 'jadx' | 'static'
+  error      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  findings   Finding[]
+  reports    Report[]
+}
+
+// One observation produced by the analysis engine for a job.
+// category: 'api' | 'network' | 'crypto' | 'permission' | 'behavior' | 'string' | 'other'
+// severity:  'info' | 'low' | 'medium' | 'high' | 'critical'
+model Finding {
+  id          String   @id @default(cuid())
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  category    String
+  severity    String
+  title       String
+  description String
+  evidence    String   // JSON-encoded array of {kind, snippet, location}
+  createdAt   DateTime @default(now())
+
+  @@index([jobId])
+  @@index([severity])
+  @@index([category])
+}
+
+// An AI-retailored report derived from a job's findings.
+// audience: 'developer' | 'executive' | 'qa' | 'auditor'
+model Report {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  audience  String
+  content   String   // markdown
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+}
+
+// Simple key/value store for app-level configuration (REA path, worker URL, etc.)
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// Audit log — every spawned `rea` command and its outcome. Used to reconstruct
+// what ran when, especially in multi-user deployments. Phase 6 hardening.
+model AuditLog {
+  id        String   @id @default(cuid())
+  jobId     String?
+  event     String   // 'job.start', 'job.done', 'job.failed', 'upload', etc.
+  payload   String   // JSON-encoded details
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([event])
+  @@index([createdAt])
+}

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Push DB schema
+        run: bun run db:push
+        env:
+          DATABASE_URL: file:./db/ci.db
+
+      - name: Start dev server (background)
+        run: |
+          bun run dev &
+          echo $! > .dev.pid
+          # Wait for server to be ready
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/readiness > /dev/null 2>&1; then
+              echo "Server ready"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run smoke test
+        run: ./scripts/smoke-test.sh http://localhost:3000
+
+      - name: Stop dev server
+        if: always()
+        run: |
+          if [ -f .dev.pid ]; then
+            kill $(cat .dev.pid) 2>/dev/null || true
+          fi
